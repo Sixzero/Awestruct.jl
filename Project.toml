@@ -1,0 +1,4 @@
+name = "Awestruct"
+uuid = "78d9d536-6628-48ca-a633-29e9f19b1bde"
+authors = ["SixZero <havliktomi@hotmail.com>"]
+version = "0.1.0"
