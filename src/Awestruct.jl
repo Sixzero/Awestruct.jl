@@ -52,75 +52,6 @@ condition(cond::Function, desc) = context -> begin
   end
   nothing
 end
-easy_read(io, reader::HoleyArray, context) = begin
-  size = get_path(context, reader.size_path)
-  pointers = get_path(context, reader.pointers_path)
-  @assert size == length(pointers) "Should be equal? $size == $(length(pointers)) but sum: $(sum(pointers))"
-  # for i in 1:size
-  #     if h.pointers[i] != 0
-  #         cast_obj = h.vec[i]
-  #         deserialize!(cast_obj)
-  #     end
-  # end
-  [easy_read(io, reader.eltype, context) for i in 1:size if pointers[i] != 0]
-end
-easy_read(io, reader::VectReader, context=[]) = begin
-  size = get_path(context, reader.size_path)
-  # if size>500
-    # @info "VectReader: Probably too long string! We cut it down."
-    # size = 500
-  # end
-  [easy_read(io, reader.eltype, context) for i in 1:size]
-end
-# SVector
-easy_read(io, v::Vector{T}) where T = begin
-  for i in eachindex(v)
-    v[i] = easy_read(io, Val(T))
-  end
-  v
-end
-easy_read(io, ::Val{DynArray{S, Eltype}}) where {Eltype, S} = begin
-  s = read(io, S)
-  vec = [easy_read(io, Eltype) for i in 1:s]
-  DynArray(s, vec)
-end
-easy_read(io, ::Val{FixString{size_type}}) where {size_type} = begin
-  s = size_type
-  if s>10000
-    @info "Probably too long string! We cut it down. $s"
-    @assert s<10000
-    s = 10000
-  end
-  chars = Vector{UInt8}(undef, s)
-  readbytes!(io, chars, s)
-  # chars = read(io, Cchar(s))
-  String(chars)
-end
-easy_read(io, ::Val{DynString{size_type}}) where {size_type} = begin
-  s = read(io, size_type)
-  if s>10000
-    @info "Probably too long string! We cut it down. $s"
-    @assert s<10000
-    s = 10000
-  end
-  chars = Vector{UInt8}(undef, s)
-  readbytes!(io, chars, s)
-  str = StringView(chars)
-  if Main.allow_print
-    @show length(str), str
-  end
-  DynString{size_type}(str)
-end
-easy_read(io, ::Val{NTuple{SIZE, T}}) where {SIZE, T} = begin
-  vec = Tuple(easy_read(io, T) for i in 1:SIZE)
-end
-easy_read(io, ::Val{T}) where T = begin
-  if isprimitivetype(T)
-    return read(io, T)
-  end
-  read_args = (easy_read(io, t) for t in Tuple(T.types))
-  T(read_args...)
-end
 handle_descriptor!(io, context, descriptor::Tuple) = begin
   key, value = descriptor
   res = easy_read(io, value, context)
@@ -211,6 +142,89 @@ easy_read(io, v::DataType, parent_ctx=nothing) = begin
   easy_read(io, Val(v))
 end
 easy_read(io, type, opts) = easy_read(io, type)
+easy_read(io, reader::HoleyArray, context) = begin
+  size = get_path(context, reader.size_path)
+  pointers = get_path(context, reader.pointers_path)
+  @assert size == length(pointers) "Should be equal? $size == $(length(pointers)) but sum: $(sum(pointers))"
+  # for i in 1:size
+  #     if h.pointers[i] != 0
+  #         cast_obj = h.vec[i]
+  #         deserialize!(cast_obj)
+  #     end
+  # end
+  [easy_read(io, reader.eltype, context) for i in 1:size if pointers[i] != 0]
+end
+easy_read(io, reader::VectReader, context=[]) = begin
+  size = get_path(context, reader.size_path)
+  # if size>500
+    # @info "VectReader: Probably too long string! We cut it down."
+    # size = 500
+  # end
+  [easy_read(io, reader.eltype, context) for i in 1:size]
+end
+# SVector
+easy_read(io, v::Vector{T}) where T = begin
+  for i in eachindex(v)
+    v[i] = easy_read(io, Val(T))
+  end
+  v
+end
+easy_read(io, ::Val{DynArray{S, Eltype}}) where {Eltype, S} = begin
+  s = read(io, S)
+  vec = [easy_read(io, Eltype) for i in 1:s]
+  DynArray(s, vec)
+end
+easy_read(io, ::Val{FixString{size_type}}) where {size_type} = begin
+  s = size_type
+  if s>10000
+    @info "Probably too long string! We cut it down. $s"
+    @assert s<10000
+    s = 10000
+  end
+  chars = Vector{UInt8}(undef, s)
+  readbytes!(io, chars, s)
+  # chars = read(io, Cchar(s))
+  String(chars)
+end
+easy_read(io, ::Val{DynString{size_type}}) where {size_type} = begin
+  s = read(io, size_type)
+  if s>10000
+    @info "Probably too long string! We cut it down. $s"
+    @assert s<10000
+    s = 10000
+  end
+  chars = Vector{UInt8}(undef, s)
+  readbytes!(io, chars, s)
+  str = StringView(chars)
+  if Main.allow_print
+    @show length(str), str
+  end
+  DynString{size_type}(str)
+end
+easy_read(io, ::Val{NTuple{SIZE, T}}) where {SIZE, T} = begin
+  vec = Tuple(easy_read(io, T) for i in 1:SIZE)
+end
+easy_read(io, ::Val{T}) where T = begin
+  if isprimitivetype(T)
+    return read(io, T)
+  end
+  read_args = (easy_read(io, t) for t in Tuple(T.types))
+  T(read_args...)
+end
+easy_write(io, v::T)  where T = begin
+  if isprimitivetype(T)
+    return write(io, v)
+  end
+  for n in fieldnames(T)
+    easy_write(io, getfield(v,n))
+  end
+end
+@generated function test4(p::P) where P
+  assignments = [
+      :( p.$name += 1 ) for name in fieldnames(P)
+  ]
+  quote $(assignments...) end
+end
 #%%
 
 
